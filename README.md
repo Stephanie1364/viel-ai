@@ -12,6 +12,10 @@ Let's dive into the magic.
 
 ---
 
+> **Having trouble installing?** Check out the **[step-by-step Installation Guide](INSTALLATION.md)** — it covers the Windows installer, Docker, and manual setup with a troubleshooting section.
+
+---
+
 ## **✨ What Can Viel Do? (The Fun Stuff)**
 
 ### **🎭 Bring Your Entire Cast to Life**
