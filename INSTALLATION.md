@@ -9,8 +9,9 @@
 | Method | Best for | Difficulty |
 |--------|----------|------------|
 | [Windows Installer](#method-1-windows-installer-easiest) | Windows users who want things done quickly | Beginner |
-| [Docker](#method-2-docker-all-platforms) | Anyone comfortable with Docker, or running a server 24/7 | Intermediate |
-| [Manual (start.bat / start.sh)](#method-3-manual-installation) | Users who downloaded the source code | Intermediate |
+| [VPS (Hostinger / Linux server)](#method-2-vps-hostinger--any-linux-server) | Anyone who wants the bot online 24/7 | Intermediate |
+| [Docker](#method-3-docker-all-platforms) | Anyone comfortable with Docker, or running a server 24/7 | Intermediate |
+| [Manual (start.bat / start.sh)](#method-4-manual-installation) | Users who downloaded the source code | Intermediate |
 
 ---
 
@@ -42,7 +43,72 @@ This is the recommended method for most Windows users.
 
 ---
 
-## Method 2: Docker (All Platforms)
+## Method 2: VPS (Hostinger / Any Linux Server)
+
+This method lets Viel run **24/7**, even when your PC and phone are off. It's the recommended approach if you want the bot to always be available in Discord.
+
+### Prerequisites
+
+- A VPS running Ubuntu (20.04 or 22.04 recommended) — Hostinger's **KVM 1** plan is sufficient
+- SSH access to your server (Hostinger provides this from their dashboard)
+
+### Step 1 — Connect to your VPS
+
+From your PC (Windows: use [PuTTY](https://www.putty.org/) or Windows Terminal), connect via SSH:
+
+```bash
+ssh root@your-vps-ip
+```
+
+Replace `your-vps-ip` with the IP address shown in your Hostinger panel.
+
+### Step 2 — Install Docker
+
+```bash
+curl -fsSL https://get.docker.com | sh
+```
+
+This installs Docker in one command. When it finishes, verify it worked:
+
+```bash
+docker --version
+```
+
+### Step 3 — Download the docker-compose file
+
+```bash
+wget https://raw.githubusercontent.com/Iteranya/viel-ai/main/docker-compose.yml
+```
+
+### Step 4 — Start Viel AI
+
+```bash
+docker compose up -d
+```
+
+Viel AI is now running in the background. It will restart automatically if the server reboots.
+
+### Step 5 — Open the firewall (Hostinger)
+
+In your **Hostinger panel → VPS → Firewall**, allow inbound traffic on port **5666**.
+
+### Step 6 — Access the control panel
+
+From any device (PC, phone, etc.), open your browser and go to:
+
+```
+http://your-vps-ip:5666
+```
+
+You can now manage Viel from anywhere, at any time.
+
+> **Security tip:** Port 5666 will be publicly accessible. Avoid using it for sensitive data, or set up a reverse proxy with HTTPS (nginx + Let's Encrypt) for production use.
+
+**Continue to [First-Time Setup](#first-time-setup).**
+
+---
+
+## Method 3: Docker (All Platforms — Local Machine)
 
 Docker works on Windows, macOS, and Linux. It is the most reliable method if you want to run Viel 24/7 on a server.
 
@@ -80,7 +146,7 @@ Open your browser and go to **http://localhost:5666**.
 
 ---
 
-## Method 3: Manual Installation
+## Method 4: Manual Installation
 
 Use this method if you cloned or downloaded the source code from GitHub.
 
