@@ -16,4 +16,7 @@ temp.jpg
 *.jsonl
 *.db
 *.log
-!Viel.jpg
+!Viel.jpg-e 
+# Environment files
+*.env
+*.env.*
