@@ -18,37 +18,42 @@ async def generate_response(task: QueueItem, db: Database):
     """
     Generates an AI response for a given task using configuration from the database.
     Conditionally adds an assistant prefill message if enabled in the config.
+    Supports both string-based prompts and structured messages_with_images.
     """
     bot_config = get_bot_config(db)
-    
+
     try:
         client = AsyncOpenAI(
             base_url=bot_config.ai_endpoint,
             api_key=bot_config.ai_key,
         )
-        
-        # The prompt is now fully constructed by the PromptEngineer
-        system_prompt = task.prompt
-        
-        # The user's most recent message is cleaned and used in the user role
-        user_message = clean_string(task.message.content)
 
-        # --- PREFILL LOGIC ---
-        # Start with the base messages for the API call
+        # The prompt is always the fully-constructed system context
+        system_prompt = task.prompt
+
+        # --- MESSAGE BUILDING ---
         messages = [
             {
                 "role": "system",
                 "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": user_message
             }
         ]
 
-        # Check the database config. If use_prefill is True, add the assistant message.
+        # NEW PATH: If structured history with images exists, inject it directly
+        # as message objects. This preserves image URLs for multimodal models.
+        if task.messages_with_images:
+            print(task.messages_with_images)
+            messages.extend(task.messages_with_images)
+
+        # The user's most recent message is cleaned and used in the user role
+        user_message = clean_string(task.message.content)
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+
+        # --- PREFILL LOGIC (unchanged) ---
         if bot_config.use_prefill:
-            # Construct the prefill string to guide the AI's response format
             prefill_content = f"[Reply] {task.bot}:"
             messages.append({
                 "role": "assistant",
@@ -61,31 +66,30 @@ async def generate_response(task: QueueItem, db: Database):
             stop=task.stop,
             max_tokens=8192,
             temperature=bot_config.temperature,
-            messages=messages  # Use the messages list, which may now include the prefill
+            messages=messages
         )
-        
+
         result = completion.choices[0].message.content if completion.choices else "//[OOC: AI returned no response.]"
         result = result.replace("[Reply]", "").replace(f"{task.bot}:", "").strip()
         result = clean_thonk(result)
         task.result = result
 
     except Exception as e:
-        # Preserve the detailed, existing error handling
         error_type = type(e).__name__
         error_message = str(e)
         error_traceback = traceback.format_exc()
-        
+
         print(f"Error in generate_response: {error_type}: {error_message}\n{error_traceback}")
-        
+
         detailed_error = f"//[OOC: AI Error - {error_type}]\n"
         if hasattr(e, 'status_code'):
             detailed_error += f"Status Code: {e.status_code}\n"
-        
+
         detailed_error += f"Task ID: {getattr(task, 'id', 'Unknown')}\n"
         detailed_error += f"Model: {bot_config.base_llm}\n"
         detailed_error += f"Message Length: {len(getattr(task.message, 'content', ''))}\n"
         detailed_error += f"Error Details: {error_message}"
-        
+
         task.result = detailed_error
 
     return task

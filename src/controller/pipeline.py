@@ -51,35 +51,39 @@ def find_all_triggered_characters(message: discord.Message, channel: ActiveChann
 
     return triggered_characters
 
-
 async def _generate_and_send_for_character(
-    character: ActiveCharacter, # Now we pass the full object
-    viel, db: Database, 
-    message: discord.Message, 
+    character: ActiveCharacter,
+    viel, db: Database,
+    message: discord.Message,
     channel: ActiveChannel,
     messenger: DiscordMessenger,
     plugin_manager: PluginManager
 ):
-    """
-    Contains the core logic for generating and sending a message for ONE character.
-    """
-    # Avoid character talking to themselves
     if character.name.lower() == message.author.display_name.lower():
         return
 
     print(f"Processing chat for {character.name} in {channel.name}...")
-    
+
     prompter = PromptEngineer(character, message, channel, plugin_manager, messenger)
-    prompt = await prompter.create_prompt()
+    result = await prompter.create_prompt()
+
+    # Backwards-compatible: handle both string return and structured dict return
+    if isinstance(result, str):
+        prompt = result
+        messages_with_images = None
+    else:
+        prompt = result["prompt"]
+        messages_with_images = result["messages_with_images"]
 
     queue_item = QueueItem(
         prompt=prompt,
+        messages_with_images=messages_with_images,   # None if no images / old path
         bot=character.name,
         user=message.author.display_name,
         stop=prompter.stopping_strings,
         message=message
     )
-    
+
     queue_item = await generate_response(queue_item, db)
 
     if not queue_item.result:

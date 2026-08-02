@@ -16,3 +16,4 @@ class QueueItem:
     message:discord.Message = None
     plugin:str = None
     default:bool = False
+    messages_with_images: list = None

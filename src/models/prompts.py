@@ -6,7 +6,7 @@ from jinja2 import Environment
 from src.models.aicharacter import ActiveCharacter
 from src.models.dimension import ActiveChannel
 from src.plugins.manager import PluginManager
-from src.controller.history import get_history 
+from src.controller.history import get_history, messages_to_string, get_history_with_image
 from api.db.database import Database
 
 # --- A sensible default template ---
@@ -97,67 +97,58 @@ class PromptEngineer:
             print(f"Error accessing database for presets: {e}. Falling back to default template.")
             return DEFAULT_PROMPT_TEMPLATE
 
-    async def create_prompt(self) -> str:
+    async def create_prompt(self) -> dict:
         """
-        Gathers context, pre-renders nested templates in character data,
-        and then renders the final prompt string.
+        Returns a dict with:
+        - 'prompt': the old string prompt (unchanged behavior)
+        - 'messages_with_images': the OpenRouter-style structured message list,
+                                    with actual image URLs embedded. None if the
+                                    history had no images.
+        - 'history': the old string form of history (for templates)
+        - 'history_messages_with_images': the structured form (for templates that want it)
         """
-        history = await get_history(self.message.channel, self.db)
+        formatted_history = await get_history_with_image(self.message.channel, self.db)
+        history = messages_to_string(formatted_history)                # old string form
+        history_messages_with_images = formatted_history                # new structured form
 
-        # --- STEP 1: Create a context for the INNER templates ---
-        # This context will be used to render strings like the character's persona.
-        # Your idea to add 'char' was perfect for this.
         inner_context = {
             "char": self.bot.name,
             "user": self.user_name
         }
 
-        # --- STEP 2: Pre-render the character's data ---
-        # We create a deep copy to avoid modifying the original bot object.
         rendered_character = copy.deepcopy(self.bot)
-        
-        # Render any fields that might contain Jinja templates
-        if rendered_character.persona:
-            template = self.jinja_env.from_string(rendered_character.persona)
-            rendered_character.persona = template.render(inner_context)
+        for field in ("persona", "instructions"):
+            value = getattr(rendered_character, field)
+            if value:
+                setattr(rendered_character, field, self.jinja_env.from_string(value).render(inner_context))
 
         if rendered_character.examples:
-            # Create a new list to hold the rendered examples
-            rendered_examples = []
-            # Loop through each example string in the list
-            for example_string in rendered_character.examples:
-                # Treat each string as a template and render it
-                template = self.jinja_env.from_string(example_string)
-                rendered_examples.append(template.render(inner_context))
-            # Replace the old list with the new list of rendered strings
-            rendered_character.examples = rendered_examples
-            
-        if rendered_character.instructions:
-            template = self.jinja_env.from_string(rendered_character.instructions)
-            rendered_character.instructions = template.render(inner_context)
+            rendered_character.examples = [
+                self.jinja_env.from_string(ex).render(inner_context)
+                for ex in rendered_character.examples
+            ]
 
-        # --- STEP 3: Create the context for the MAIN template ---
-        # This now uses our pre-rendered character object.
-        base_context = {
-            "character": rendered_character, # <-- Using the rendered version!
-            "channel": self.channel,
-            "user": self.user_name,
-            "history": history,
-            "message": self.message
-        }
-
-        # 2. Execute plugins based on the message content
         plugin_outputs = await self.plugin_manager.scan_and_execute(
             self.message, self.bot, self.channel, self.db, self.messenger
         )
-        
-        final_context = {**base_context, "plugins": plugin_outputs}
 
-        # --- STEP 5: Final Render ---
-        prompt_template_str = self.get_template_from_preset()
-        template = self.jinja_env.from_string(prompt_template_str)
-        final_prompt = template.render(final_context)
-        print(f"=====================\nFINAL PROMPT\n=======================\n{final_prompt}")
-        
-        return final_prompt
-       
+        base_context = {
+            "character": rendered_character,
+            "channel": self.channel,
+            "user": self.user_name,
+            "history": history,
+            "history_messages_with_images": history_messages_with_images,
+            "message": self.message,
+            "plugins": plugin_outputs,
+        }
+
+        template_str = self.get_template_from_preset()
+        template = self.jinja_env.from_string(template_str)
+        rendered_prompt = template.render(base_context)
+
+        print(f"=====================\nFINAL PROMPT (string)\n=======================\n{rendered_prompt}")
+
+        return {
+            "prompt": rendered_prompt,                     # old string form
+            "messages_with_images": history_messages_with_images,  # explicit new form
+        }
