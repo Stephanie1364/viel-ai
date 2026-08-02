@@ -19,6 +19,8 @@ async def generate_response(task: QueueItem, db: Database):
     Generates an AI response for a given task using configuration from the database.
     Conditionally adds an assistant prefill message if enabled in the config.
     Supports both string-based prompts and structured messages_with_images.
+    System prompt is placed below history for models that respond better to
+    instructions arriving after visual context.
     """
     bot_config = get_bot_config(db)
 
@@ -28,29 +30,54 @@ async def generate_response(task: QueueItem, db: Database):
             api_key=bot_config.ai_key,
         )
 
-        # The prompt is always the fully-constructed system context
-        system_prompt = task.prompt
-
         # --- MESSAGE BUILDING ---
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt
-            }
-        ]
+        messages = []
 
-        # NEW PATH: If structured history with images exists, inject it directly
-        # as message objects. This preserves image URLs for multimodal models.
+        # History first, so the model sees the visual context early
         if task.messages_with_images:
-            print(task.messages_with_images)
             messages.extend(task.messages_with_images)
 
-        # The user's most recent message is cleaned and used in the user role
-        user_message = clean_string(task.message.content)
+        # System prompt below the history — "later is louder"
         messages.append({
-            "role": "user",
-            "content": user_message
+            "role": "system",
+            "content": task.prompt
         })
+
+        # The user's most recent message is cleaned and used in the user role
+                # --- USER MESSAGE BUILDING WITH IMAGE SUPPORT ---
+        user_clean = clean_string(task.message.content)
+
+        # Build the user message as a content array if there are images
+        user_attachments = [
+            att for att in task.message.attachments
+            if att.content_type and att.content_type.startswith("image/")
+        ]
+
+        if user_attachments:
+            # Build the user message just like the history objects
+            user_content_parts = []
+
+            if user_clean:
+                user_content_parts.append({"type": "text", "text": user_clean})
+
+            for att in user_attachments:
+                user_content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": att.url}
+                })
+
+            messages.append({
+                "role": "user",
+                "content": user_content_parts
+            })
+        else:
+            # Old behavior: plain string
+            messages.append({
+                "role": "user",
+                "content": user_clean
+            })
+        # --- END USER MESSAGE BUILDING ---
+
 
         # --- PREFILL LOGIC (unchanged) ---
         if bot_config.use_prefill:
@@ -93,6 +120,7 @@ async def generate_response(task: QueueItem, db: Database):
         task.result = detailed_error
 
     return task
+
 
 
 async def generate_blank(system: str, user: str, db: Database) -> str:
